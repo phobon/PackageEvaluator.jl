@@ -35,18 +35,40 @@ sudo su -c 'echo "APT::Get::force-yes \"true\";" >> /etc/apt/apt.conf.d/pkgevalf
 sudo apt-get update    # Pull in latest versions
 sudo apt-get upgrade   # Upgrade system packages
 # Use first argument to script to distinguish between the versions
-if [ "$1" == "release" ]
-then
-    wget -O julia.tar.gz https://julialang.s3.amazonaws.com/bin/linux/x64/0.3/julia-0.3-latest-linux-x86_64.tar.gz
+if [ "$1" = "src" ]; then
+    headspec="master"
+    if [ -n "$3" ]; then
+        headspec="$3"
+    fi
+    remote="https://github.com/JuliaLang/julia.git"
+    if [ -n "$4" ]; then
+        remote="$4"
+    fi
+    echo "Building from source: $remote at commit $headspec"
+    git clone $remote julia
+    if [ $? ]; then
+        echo "Failed to clone repository"
+        exit 1
+    fi
+    cd julia
+    git checkout $headspec
+    if [ $? ]; then
+        echo "Failed to checkout requested branch/commit"
+        exit 1
+    fi
 else
-    wget -O julia.tar.gz https://status.julialang.org/download/linux-x86_64
+    echo "Using prebuilt binary"
+    if [ "$1" = "release" ]; then
+        wget -O julia.tar.gz https://julialang.s3.amazonaws.com/bin/linux/x64/0.3/julia-0.3-latest-linux-x86_64.tar.gz
+    else
+        wget -O julia.tar.gz https://status.julialang.org/download/linux-x86_64
+    fi
+    mkdir julia
+    tar -zxvf julia.tar.gz -C ./julia --strip-components=1
 fi
-mkdir julia
-tar -zxvf julia.tar.gz -C ./julia --strip-components=1
 export PATH="${PATH}:/home/vagrant/julia/bin/"
 # Retain PATH to make it easier to use VM for debugging
 echo "export PATH=\"\${PATH}:/home/vagrant/julia/bin/\"" >> /home/vagrant/.profile
-
 
 #######################################################################
 # Install any dependencies that aren't handled by BinDeps
