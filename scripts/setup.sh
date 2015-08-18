@@ -34,8 +34,17 @@ sudo su -c 'echo "APT::Get::force-yes \"true\";" >> /etc/apt/apt.conf.d/pkgevalf
 # Upgrade the installation and install Julia 
 sudo apt-get update    # Pull in latest versions
 sudo apt-get upgrade   # Upgrade system packages
+# First check if there is an overwriting ARGS file
+if [ -e "scripts/ARGS" ]; then
+    echo "Overwriting ARGS"
+    read nargs < "scripts/ARGS"
+    set -- $nargs
+else
+    echo "Using passed ARGS"
+fi
+
 # Use first argument to script to distinguish between the versions
-if [ "$1" = "src" ]; then
+if [ "$1" == "src" ]; then
     headspec="master"
     if [ -n "$3" ]; then
         headspec="$3"
@@ -46,19 +55,21 @@ if [ "$1" = "src" ]; then
     fi
     echo "Building from source: $remote at commit $headspec"
     git clone $remote julia
-    if [ $? ]; then
+    if [ $? -ne 0 ]; then
         echo "Failed to clone repository"
         exit 1
     fi
     cd julia
     git checkout $headspec
-    if [ $? ]; then
+    if [ $? -ne 0 ]; then
         echo "Failed to checkout requested branch/commit"
         exit 1
     fi
+    make
+    cd ..
 else
     echo "Using prebuilt binary"
-    if [ "$1" = "release" ]; then
+    if [ "$1" == "release" ]; then
         wget -O julia.tar.gz https://julialang.s3.amazonaws.com/bin/linux/x64/0.3/julia-0.3-latest-linux-x86_64.tar.gz
     else
         wget -O julia.tar.gz https://status.julialang.org/download/linux-x86_64
