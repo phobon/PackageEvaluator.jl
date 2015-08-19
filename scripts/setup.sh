@@ -29,29 +29,58 @@ sudo su -c 'echo "APT::Get::force-yes \"true\";" >> /etc/apt/apt.conf.d/pkgevalf
 # Uncomment following line to check it did indeed work
 #cat /etc/apt/apt.conf.d/pkgevalforceyes
 
-
 #######################################################################
-# Upgrade the installation and install Julia 
-sudo apt-get update    # Pull in latest versions
-sudo apt-get upgrade   # Upgrade system packages
+# Process the script arguments
+juliaver=$1
+testset=$2
+headspec=$3
+remote=$4
+binurl=$5
 # First check if there is an overwriting ARGS file
-if [ -e "scripts/ARGS" ]; then
+argfile="/vagrant/ARGS"
+if [ -e "$argfile" ]; then
+    #sudo apt-get install jq
     echo "Overwriting ARGS"
-    read nargs < "scripts/ARGS"
-    set -- $nargs
+    argjuliaver=`jq '.jlversion' $argfile`
+    if [ -n $argjuliaver ]; then
+        juliaver=`echo $argjuliaver | tr -d '"'`
+    fi
+    argtestset=`jq '.testset' $argfile`
+    if [ -n $argtestset ]; then
+        testset=`echo $argtestset | tr -d '"'`
+    fi
+    argheadspec=`jq '.headspec' $argfile`
+    if [ -n $argheadspec ]; then
+        headspec=`echo $argheadspec | tr -d '"'`
+    fi
+    argremote=`jq '.remote' $argfile`
+    if [ -n $argremote ]; then
+        remote=`echo $argremote | tr -d '"'`
+    fi
+    argbinurl=`jq '.binurl' $argfile`
+    if [ -n "$argbinurl" ]; then
+        binurl=`echo $argbinurl | tr -d '"'`
+    fi
 else
     echo "Using passed ARGS"
 fi
+echo "Julia version: $juliaver"
+echo "Test set: $testset"
+echo "Head spec: $headspec"
+echo "Git remote: $remote"
+echo "Binary URL: $binurl"
 
+#######################################################################
+# Upgrade the installation and install Julia
+sudo apt-get update    # Pull in latest versions
+sudo apt-get upgrade   # Upgrade system packages
 # Use first argument to script to distinguish between the versions
-if [ "$1" == "src" ]; then
-    headspec="master"
-    if [ -n "$3" ]; then
-        headspec="$3"
+if [ "$juliaver" == "src" ]; then
+    if [ -z "$headspec" ]; then
+        headspec="master"
     fi
-    remote="https://github.com/JuliaLang/julia.git"
-    if [ -n "$4" ]; then
-        remote="$4"
+    if [ -z "$remote" ]; then
+        remote="https://github.com/JuliaLang/julia.git"
     fi
     echo "Building from source: $remote at commit $headspec"
     git clone $remote julia
@@ -69,11 +98,15 @@ if [ "$1" == "src" ]; then
     cd ..
 else
     echo "Using prebuilt binary"
-    if [ "$1" == "release" ]; then
-        wget -O julia.tar.gz https://julialang.s3.amazonaws.com/bin/linux/x64/0.3/julia-0.3-latest-linux-x86_64.tar.gz
-    else
-        wget -O julia.tar.gz https://status.julialang.org/download/linux-x86_64
+    if [ -z "$binurl" ]; then
+        if [ "$juliaver" == "release" ]; then
+            binurl="https://status.julialang.org/download/linux-x86_64"
+        else
+            binurl="https://julialang.s3.amazonaws.com/bin/linux/x64/0.3/julia-0.3-latest-linux-x86_64.tar.gz"
+        fi
     fi
+    echo "  Downloading from: $binurl"
+    wget -O julia.tar.gz $binurl
     mkdir julia
     tar -zxvf julia.tar.gz -C ./julia --strip-components=1
 fi
@@ -99,7 +132,7 @@ sudo apt-get install unzip
 # Need cmake for e.g. GLFW.jl, Metis.jl
 sudo apt-get install cmake
 # Install R for e.g. Rif.jl, RCall.jl
-sudo apt-get install r-base r-base-dev 
+sudo apt-get install r-base r-base-dev
 # Install Java for e.g. JavaCall.jl, Taro.jl
 # From: http://stackoverflow.com/q/19275856/3822752
 sudo add-apt-repository -y ppa:webupd8team/java
@@ -125,9 +158,9 @@ git clone https://github.com/IainNZ/PackageEvaluator.jl.git $PKGEVALDIR
 # Make results folders. Folder name is second argument to this script.
 # These folders are shared - i.e. we are writing to outside the VM,
 # most likely the PackageEvaluator.jl/scripts folder.
-rm -rf /vagrant/$2
-mkdir /vagrant/$2
-cd /vagrant/$2
+rm -rf /vagrant/$testset
+mkdir /vagrant/$testset
+cd /vagrant/$testset
 # Initialize METADATA for testing
 # Note that it is important for it to not be in the /vagrant/ folder as
 # that seems to mess with symlinks quite badly.
@@ -138,22 +171,22 @@ julia -e "Pkg.init(); println(Pkg.dir())"
 
 #######################################################################
 # Run PackageEvaluator
-if [ "$2" == "release" ]
+if [ "$testset" == "release" ]
 then
     LOOPOVER=/home/vagrant/.julia/v0.3/METADATA/*
-elif [ "$2" == "releaseAL" ]
+elif [ "$testset" == "releaseAL" ]
 then
     LOOPOVER=/home/vagrant/.julia/v0.3/METADATA/[A-L]*;
-elif [ "$2" == "releaseMZ" ]
+elif [ "$testset" == "releaseMZ" ]
 then
     LOOPOVER=/home/vagrant/.julia/v0.3/METADATA/[M-Z]*;
-elif [ "$2" == "nightly" ]
+elif [ "$testset" == "nightly" ]
 then
     LOOPOVER=/home/vagrant/.julia/v0.4/METADATA/*;
-elif [ "$2" == "nightlyAL" ]
+elif [ "$testset" == "nightlyAL" ]
 then
     LOOPOVER=/home/vagrant/.julia/v0.4/METADATA/[A-L]*;
-elif [ "$2" == "nightlyMZ" ]
+elif [ "$testset" == "nightlyMZ" ]
 then
     LOOPOVER=/home/vagrant/.julia/v0.4/METADATA/[M-Z]*;
 fi
@@ -213,7 +246,7 @@ do
     # just pull the encoding part out of JSON, which is all
     # we really need because most of it is parsing?
     julia -e 'Pkg.add("JSON")'
-    julia $PKGEVALDIR/src/prepjson.jl $PKGNAME $TESTSTATUS /vagrant/$2
+    julia $PKGEVALDIR/src/prepjson.jl $PKGNAME $TESTSTATUS /vagrant/$testset
     # Finish up by removing the package. Doesn't actually remove
     # it in the sense of deleting the files - this helps the
     # overall process run faster, if my understanding of how
@@ -226,8 +259,8 @@ done
 # Bundle results together
 echo "Bundling results"
 cd /vagrant/
-julia $PKGEVALDIR/src/joinjson.jl /vagrant/$2 $2
+julia $PKGEVALDIR/src/joinjson.jl /vagrant/$testset $testset
 
 
 #######################################################################
-echo "Finished normally! $1  $2"
+echo "Finished normally! $juliaver  $testset"
