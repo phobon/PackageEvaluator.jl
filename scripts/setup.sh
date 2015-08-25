@@ -39,7 +39,7 @@ binurl=$5
 # First check if there is an overwriting ARGS file
 argfile="/vagrant/ARGS"
 if [ -e "$argfile" ]; then
-    #sudo apt-get install jq
+    sudo apt-get install jq
     echo "Overwriting ARGS"
     argjuliaver=`jq '.jlversion' $argfile`
     if [ -n $argjuliaver ]; then
